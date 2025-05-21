@@ -6,7 +6,7 @@ import numpy as np
 import os
 import argparse
 
-from dataset.dataset_ESC50 import InMemoryESC50 as ESC50, download_extract_zip
+from dataset.dataset_ESC50 import InMemoryESC50 as ESC50, download_extract_zip, init_preprocessing
 from train_crossval import test, make_model, global_stats
 import config
 

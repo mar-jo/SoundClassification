@@ -10,9 +10,9 @@ from tqdm import tqdm
 import sys
 from functools import partial
 
-from models.model_classifier import AudioMLP
+from models.model_classifier import ESResNet18
 from models.utils import EarlyStopping, Tee
-from dataset.dataset_ESC50 import InMemoryESC50 as ESC50
+from dataset.dataset_ESC50 import InMemoryESC50 as ESC50, init_preprocessing
 import config
 
 # mean and std of train data for every fold
@@ -135,7 +135,7 @@ def make_model():
 
 if __name__ == "__main__":
     init_preprocessing()
-    
+
     data_path = config.esc50_path
     use_cuda = torch.cuda.is_available()
     device = torch.device(f"cuda:{config.device_id}" if use_cuda else "cpu")

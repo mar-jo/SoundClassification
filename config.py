@@ -19,12 +19,7 @@ n_mels = 128
 hop_length = 512
 #n_mfcc = 42
 
-model_constructor = "AudioMLP(n_steps=431,\
-n_mels=config.n_mels,\
-hidden1_size=512,\
-hidden2_size=128,\
-output_size=config.n_classes,\
-time_reduce=1)"
+model_constructor = "ESResNet18(num_classes=config.n_classes, dropout=0.3, use_se=True)"
 
 # ###TRAINING
 # ratio to split off from training data
