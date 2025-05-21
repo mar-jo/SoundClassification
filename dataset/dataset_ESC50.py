@@ -164,7 +164,7 @@ class ESC50(data.Dataset):
         wave = wave[:, start:end+1]
 
         # apply waveform transforms
-        wave_copy = torch.tensor(np.copy(wave), dtype=torch.float32)
+        wave_copy = wave.clone().detach().float()
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy = wave_copy.squeeze(0)
 
