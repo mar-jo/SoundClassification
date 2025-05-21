@@ -52,7 +52,7 @@ def download_progress(current, total, width=80):
 
 class ESC50(data.Dataset):
 
-    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 0.0), download=False):
+    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 1.0), download=False):
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
