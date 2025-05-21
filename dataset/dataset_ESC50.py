@@ -10,6 +10,7 @@ import os
 import sys
 from functools import partial
 import numpy as np
+import shutil
 
 import config
 from . import transforms
@@ -163,9 +164,9 @@ class ESC50(data.Dataset):
         wave = wave[:, start:end+1]
 
         # apply waveform transforms
-        wave_copy = wave.clone()
+        wave_copy = torch.tensor(np.copy(wave), dtype=torch.float32)
         wave_copy = self.wave_transforms(wave_copy)
-        wave_copy.squeeze_(0)
+        wave_copy = wave_copy.squeeze(0)
 
         # feature extraction
         if self.n_mfcc:
