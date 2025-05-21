@@ -6,12 +6,14 @@ import numpy as np
 import os
 import argparse
 
-from dataset.dataset_ESC50 import ESC50, download_extract_zip
+from dataset.dataset_ESC50 import InMemoryESC50 as ESC50, download_extract_zip
 from train_crossval import test, make_model, global_stats
 import config
 
 
 if __name__ == "__main__":
+    init_preprocessing()
+
     # optional: the test cross validation path can be specified from command line
     parser = argparse.ArgumentParser()
     parser.add_argument('cvpath', nargs='?', default=config.test_experiment)

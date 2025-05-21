@@ -1,5 +1,8 @@
 import torch
+import torchaudio
 from torch.utils import data
+import torchaudio.transforms as T
+
 from sklearn.model_selection import train_test_split
 import requests
 from tqdm import tqdm
@@ -7,7 +10,6 @@ import os
 import sys
 from functools import partial
 import numpy as np
-import librosa
 
 import config
 from . import transforms
@@ -16,6 +18,12 @@ from . import transforms
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
+def init_preprocessing():
+    output_dir = "preprocessed_data"
+    if os.path.exists(output_dir):
+        print(f"Deleting old cache: {output_dir}")
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
 def download_file(url: str, fname: str, chunk_size=1024):
     resp = requests.get(url, stream=True)
@@ -48,7 +56,6 @@ def download_progress(current, total, width=80):
     # Don't use print() as it will print in new line every time.
     sys.stdout.write("\r" + progress_message)
     sys.stdout.flush()
-
 
 class ESC50(data.Dataset):
 
@@ -95,9 +102,10 @@ class ESC50(data.Dataset):
             # transforms can be applied on wave and spectral representation
             self.wave_transforms = transforms.Compose(
                 torch.Tensor,
-                #transforms.RandomScale(max_scale=1.25),
+                transforms.RandomScale(max_scale=1.25),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len)
+                transforms.RandomCrop(out_len=out_len),
+                transforms.RandomNoise(min_noise=0.001, max_noise=0.01)
             )
 
             self.spec_transforms = transforms.Compose(
@@ -106,6 +114,8 @@ class ESC50(data.Dataset):
                 # lambda non-pickleable, problem on windows, replace with partial function
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
+                transforms.FrequencyMask(max_width=10, numbers=2),
+                transforms.TimeMask(max_width=15, numbers=2)
             )
 
         else:
@@ -131,51 +141,55 @@ class ESC50(data.Dataset):
     def __getitem__(self, index):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
-        wave, rate = librosa.load(path, sr=config.sr)
+        
+        # load waveform and resample
+        wave, sr = torchaudio.load(path)
+        if sr != config.sr:
+            resampler = T.Resample(orig_freq=sr, new_freq=config.sr)
+            wave = resampler(wave)
 
         # identifying the label of the sample from its name
-        temp = file_name.split('.')[0]
-        class_id = int(temp.split('-')[-1])
+        class_id = int(file_name.split('.')[0].split('-')[-1])
 
-        if wave.ndim == 1:
-            wave = wave[:, np.newaxis]
-
-        # normalizing waves to [-1, 1]
-        if np.abs(wave.max()) > 1.0:
+        # normalizing waves [-1, 1]
+        if wave.abs().max() > 1.0:
             wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-        wave = wave.T * 32768.0
+        wave = wave * 32768.0
 
-        # Remove silent sections
-        start = wave.nonzero()[1].min()
-        end = wave.nonzero()[1].max()
-        wave = wave[:, start: end + 1]
+        # rm silent sections
+        nonzero = wave.nonzero()
+        start = nonzero[:, 1].min()
+        end = nonzero[:, 1].max()
+        wave = wave[:, start:end+1]
 
-        wave_copy = np.copy(wave)
+        # apply waveform transforms
+        wave_copy = wave.clone()
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy.squeeze_(0)
 
+        # feature extraction
         if self.n_mfcc:
-            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
-                                        sr=config.sr,
-                                        n_mels=config.n_mels,
-                                        n_fft=1024,
-                                        hop_length=config.hop_length,
-                                        n_mfcc=self.n_mfcc)
-            feat = mfcc
+            transform = T.MFCC(
+                sample_rate=config.sr,
+                n_mfcc=self.n_mfcc,
+                melkwargs={
+                    'n_fft': 1024,
+                    'n_mels': config.n_mels,
+                    'hop_length': config.hop_length
+                }
+            )
+            feat = transform(wave_copy)
         else:
-            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
-                                               sr=config.sr,
-                                               n_mels=config.n_mels,
-                                               n_fft=1024,
-                                               hop_length=config.hop_length,
-                                               #center=False,
-                                               )
-            log_s = librosa.power_to_db(s, ref=np.max)
+            mel_spec = T.MelSpectrogram(
+                sample_rate=config.sr,
+                n_fft=1024,
+                hop_length=config.hop_length,
+                n_mels=config.n_mels
+            )(wave_copy)
+            feat = T.AmplitudeToDB()(mel_spec)
 
-            # masking the spectrograms
-            log_s = self.spec_transforms(log_s)
-
-            feat = log_s
+        # apply spectrogram transforms
+        feat = self.spec_transforms(feat)
 
         # normalize
         if self.global_mean:
@@ -183,6 +197,58 @@ class ESC50(data.Dataset):
 
         return file_name, feat, class_id
 
+class OnDiskESC50(ESC50):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        fold_str = "_".join(str(f) for f in sorted(self.test_folds))
+        output_dir = f"preprocessed_data/fold_{fold_str}_{self.subset}"
+        self.folder = output_dir
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            print(f"Preprocessing {super().__len__()} samples to: {output_dir}")
+            for i in tqdm(range(super().__len__()), desc="Caching to disk"):
+                fname, feat, label = super().__getitem__(i)
+                torch.save({'features': feat, 'label': label},
+                           os.path.join(output_dir, fname.replace('.wav', '.pt')))
+        
+        self.files = sorted([f for f in os.listdir(output_dir) if f.endswith('.pt')])
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        data = torch.load(os.path.join(self.folder, self.files[idx]))
+        return self.files[idx], data['features'], data['label']
+
+
+class InMemoryESC50(ESC50):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        fold_str = "_".join(str(f) for f in sorted(self.test_folds))
+        output_dir = f"preprocessed_data/fold_{fold_str}_{self.subset}"
+        self.data = []
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            print(f"Preprocessing {super().__len__()} samples to: {output_dir}")
+            for i in tqdm(range(super().__len__()), desc="Caching to RAM (and disk)"):
+                fname, feat, label = super().__getitem__(i)
+                torch.save({'features': feat, 'label': label},
+                           os.path.join(output_dir, fname.replace('.wav', '.pt')))
+
+        self.files = sorted([f for f in os.listdir(output_dir) if f.endswith('.pt')])
+        for f in tqdm(self.files, desc="Loading into RAM"):
+            data = torch.load(os.path.join(output_dir, f))
+            self.data.append((f, data['features'], data['label']))
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
 
 def get_global_stats(data_path):
     res = []
