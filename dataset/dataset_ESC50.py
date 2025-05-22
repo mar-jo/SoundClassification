@@ -4,6 +4,7 @@ from torch.utils import data
 import torchaudio.transforms as T
 
 from sklearn.model_selection import train_test_split
+from dataset.transforms import SpecAugment
 import requests
 from tqdm import tqdm
 import os
@@ -127,7 +128,7 @@ class ESC50(data.Dataset):
                 partial(torch.unsqueeze, dim=0),
                 SpecAugment(time_mask_param=30, freq_mask_param=13)
             )
-            
+
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
@@ -185,8 +186,11 @@ class ESC50(data.Dataset):
                 n_mels=config.n_mels
             ).to(dtype=torch.float32)
 
+            db_transform = T.AmplitudeToDB(stype='power')
+
             mel_spec = mel_transform(wave_copy)
-            feat = mel_spec
+            mel_spec_db = db_transform(mel_spec)
+            feat = mel_spec_db
 
         # apply spectrogram transforms
         feat = self.spec_transforms(feat)

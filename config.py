@@ -15,7 +15,7 @@ test_folds = [1, 2, 3, 4, 5]
 
 # sampling rate for waves
 sr = 44100
-n_mels = 128
+n_mels = 64
 hop_length = 512
 #n_mfcc = 42
 
