@@ -102,21 +102,15 @@ class ESC50(data.Dataset):
             # augment training data with transformations that include randomness
             # transforms can be applied on wave and spectral representation
             self.wave_transforms = transforms.Compose(
-                torch.Tensor,
-                transforms.RandomScale(max_scale=1.25),
+                lambda x: x.detach().clone().float(),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len),
-                transforms.RandomNoise(min_noise=0.001, max_noise=0.01)
+                transforms.RandomCrop(out_len=out_len)
             )
 
             self.spec_transforms = transforms.Compose(
-                # to Tensor and prepend singleton dim
-                #lambda x: torch.Tensor(x).unsqueeze(0),
-                # lambda non-pickleable, problem on windows, replace with partial function
-                torch.Tensor,
+                lambda x: x.detach().clone().float(),
                 partial(torch.unsqueeze, dim=0),
-                transforms.FrequencyMask(max_width=10, numbers=2),
-                transforms.TimeMask(max_width=15, numbers=2)
+                SpecAugment(time_mask_param=30, freq_mask_param=13)
             )
 
         else:
@@ -129,9 +123,11 @@ class ESC50(data.Dataset):
             )
 
             self.spec_transforms = transforms.Compose(
-                torch.Tensor,
+                lambda x: x.detach().clone().float(),
                 partial(torch.unsqueeze, dim=0),
+                SpecAugment(time_mask_param=30, freq_mask_param=13)
             )
+            
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
@@ -167,6 +163,7 @@ class ESC50(data.Dataset):
         wave_copy = wave.clone().detach().float()
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy = wave_copy.squeeze(0)
+        wave_copy = wave_copy.to(torch.float32)  # <-- Ensure float32
 
         # feature extraction
         if self.n_mfcc:
@@ -181,13 +178,15 @@ class ESC50(data.Dataset):
             )
             feat = transform(wave_copy)
         else:
-            mel_spec = T.MelSpectrogram(
+            mel_transform = T.MelSpectrogram(
                 sample_rate=config.sr,
                 n_fft=1024,
                 hop_length=config.hop_length,
                 n_mels=config.n_mels
-            )(wave_copy)
-            feat = T.AmplitudeToDB()(mel_spec)
+            ).to(dtype=torch.float32)
+
+            mel_spec = mel_transform(wave_copy)
+            feat = mel_spec
 
         # apply spectrogram transforms
         feat = self.spec_transforms(feat)

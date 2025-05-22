@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torchaudio.transforms as T
 import random
 
 # Composes several transforms together.
@@ -8,10 +9,13 @@ class Compose:
         self.transforms = transforms
 
     def __call__(self, x):
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, dtype=torch.float32)
+        elif x.dtype != torch.float32:
+            x = x.float()
         for t in self.transforms:
             x = t(x)
         return x
-
 
 def scale(old_value, old_min, old_max, new_min, new_max):
     old_range = (old_max - old_min)
@@ -171,3 +175,21 @@ class TimeMask():
 
     def __call__(self, wave):
         return self.addTimeMask(wave)
+
+
+class SpecAugment(torch.nn.Module):
+    def init(self, time_mask_param=30, freq_mask_param=13, num_masks=2):
+        super().init()
+        self.time_mask_param = time_mask_param
+        self.freq_mask_param = freq_mask_param
+        self.num_masks = num_masks
+
+    def forward(self, x):
+        # x: Tensor [1, nmels, time]
+        x = x.clone()
+        for  in range(self.num_masks):
+            time_mask = T.TimeMasking(time_mask_param=self.time_mask_param)
+            freq_mask = T.FrequencyMasking(freq_mask_param=self.freq_mask_param)
+            x = time_mask(x)
+            x = freq_mask(x)
+        return x
