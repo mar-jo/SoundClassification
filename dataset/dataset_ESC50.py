@@ -125,8 +125,7 @@ class ESC50(data.Dataset):
 
             self.spec_transforms = transforms.Compose(
                 lambda x: x.detach().clone().float(),
-                partial(torch.unsqueeze, dim=0),
-                SpecAugment(time_mask_param=30, freq_mask_param=13)
+                partial(torch.unsqueeze, dim=0)
             )
 
         self.global_mean = global_mean_std[0]
@@ -196,8 +195,7 @@ class ESC50(data.Dataset):
         feat = self.spec_transforms(feat)
 
         # normalize
-        if self.global_mean:
-            feat = (feat - self.global_mean) / self.global_std
+        feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
 

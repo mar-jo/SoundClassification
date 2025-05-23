@@ -16,11 +16,11 @@ from dataset.dataset_ESC50 import InMemoryESC50 as ESC50, init_preprocessing
 import config
 
 # mean and std of train data for every fold
-global_stats = np.array([[-54.364834, 20.853344],
-                         [-54.279022, 20.847532],
-                         [-54.18343, 20.80387],
-                         [-54.223698, 20.798292],
-                         [-54.200905, 20.949806]])
+global_stats = np.array([[46.787395, 53.129417],
+                         [46.823586, 53.57401 ],
+                         [47.33081,  53.222954],
+                         [46.376747, 54.42234 ],
+                         [46.48763,  54.142033]])
 
 # evaluate model on different testing data 'dataloader'
 def test(model, dataloader, criterion, device):
